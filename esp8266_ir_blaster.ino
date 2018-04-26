@@ -1,3 +1,20 @@
+/*
+ * This programm runs a webserver on the chip providing to main routes:
+ * POST /play    
+ *   This will trigger a 38khz PWM signal on the IR LED with the given timings
+ *   Parameters: expects form encoded parameter 'timings' as comma separated list of integers
+ *    
+ * GET /record
+ *   This will probe the IR sensor and return the timings in the response body.
+ *   The probing call is not blocking apparently, so it may have to be triggered again, to 
+ *   actually show a result.
+ *   If nothing was receive the response will contain the string 'empty'.
+ * 
+ * All neccessary configuration parameters are defined in the included config.h
+ * If you copied/cloned this project for the first time you may have to copy
+ * the config.h.example -> config.h and update the parameters with the matching values.
+ */
+
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
@@ -7,13 +24,7 @@
 #include <IRutils.h>
 #include <IRsend.h>
 
-// An IR detector/demodulator is connected to GPIO pin 14(D5 on a NodeMCU
-// board).
-uint16_t RECV_PIN = 14;
-
-#define IR_LED 12
-const char* ssid = "...";
-const char* password = "...";
+#include "config.h"
 
 IRrecv irrecv(RECV_PIN);
 IRsend irsend(IR_LED);  // Set the GPIO to be used to sending the message.
@@ -24,7 +35,7 @@ void handleRoot() {
   server.send(200, "text/plain", "NodeMCU infrared remote");
 }
 
-#define MAX_DATA_LENGTH 500
+#define MAX_DATA_LENGTH 100
 uint16_t signal_data[MAX_DATA_LENGTH];
 int current_data_length = -1;
 
@@ -63,96 +74,17 @@ void handlePlay() {
 
 decode_results results;
 
-void dumpToSerial() {
-      // Display a crude timestamp.
-    uint32_t now = millis();
-    Serial.printf("Timestamp : %06u.%03u\n", now / 1000, now % 1000);
-    if (results.overflow)
-      Serial.printf("WARNING: IR code is too big for buffer (>= %d). "
-                    "This result shouldn't be trusted until this is resolved. "
-                    "Edit & increase CAPTURE_BUFFER_SIZE.\n",
-                    CAPTURE_BUFFER_SIZE);
-    // Display the basic output of what we found.
-    Serial.print(resultToHumanReadableBasic(&results));
-    //dumpACInfo(&results);  // Display any extra A/C info if we have it.
-    yield();  // Feed the WDT as the text output can take a while to print.
-
-    // Display the library version the message was captured with.
-    Serial.print("Library   : v");
-    Serial.println(_IRREMOTEESP8266_VERSION_);
-    Serial.println();
-
-    // Output RAW timing info of the result.
-    Serial.println(resultToTimingInfo(&results));
-    yield();  // Feed the WDT (again)
-
-    // Output the results as source code
-    Serial.println(resultToSourceCode(&results));
-    Serial.println("");  // Blank line between entries
-    yield();  // Feed the WDT (again)
-}
-
-
 void handleRecord() {
-   String output = "";
-    if (irrecv.decode(&results)) {
-      //dumpToSerial();
-      output += resultToSourceCode(&results);
-      irrecv.resume();  // Receive the next value
-    } else {
-      output = "empty";
-    }
- server.sendHeader("Access-Control-Allow-Origin", "*");
- server.send(200, "text/html", output);
+  String output = "";
+  if (irrecv.decode(&results)) {
+    output += resultToSourceCode(&results);
+    irrecv.resume();  // Receive the next value
+  } else {
+    output = "empty";
+  }
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "text/html", output);
 }
-
-void handleRecord_() {
-   String output = "";
-
-    if (irrecv.decode(&results)) {
-      // print() & println() can't handle printing long longs. (uint64_t)
-
-    // Display a crude timestamp.
-    uint32_t now = millis();
-    Serial.printf("Timestamp : %06u.%03u\n", now / 1000, now % 1000);
-    if (results.overflow)
-      Serial.printf("WARNING: IR code is too big for buffer (>= %d). "
-                    "This result shouldn't be trusted until this is resolved. "
-                    "Edit & increase CAPTURE_BUFFER_SIZE.\n",
-                    CAPTURE_BUFFER_SIZE);
-    // Display the basic output of what we found.
-    Serial.print(resultToHumanReadableBasic(&results));
-    //dumpACInfo(&results);  // Display any extra A/C info if we have it.
-    yield();  // Feed the WDT as the text output can take a while to print.
-
-    // Display the library version the message was captured with.
-    Serial.print("Library   : v");
-    Serial.println(_IRREMOTEESP8266_VERSION_);
-    Serial.println();
-
-    // Output RAW timing info of the result.
-    Serial.println(resultToTimingInfo(&results));
-    yield();  // Feed the WDT (again)
-
-    // Output the results as source code
-    Serial.println(resultToSourceCode(&results));
-    Serial.println("");  // Blank line between entries
-    yield();  // Feed the WDT (again)
-
-
-      output += resultToHumanReadableBasic(&results);
-       yield();
-      output += resultToTimingInfo(&results);
-       yield();
-      output += " <br />";
-      irrecv.resume();  // Receive the next value
-    } else {
-      output = "war false";
-    }
- server.sendHeader("Access-Control-Allow-Origin", "*");
- server.send(200, "text/html", output + "<a href=\"/ir\">Nochmal</a>");
-}
-
 
 void handleNotFound(){
   String message = "File Not Found\n\n";
@@ -181,7 +113,7 @@ void setup(void){
 
 
   WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
+  WiFi.begin(SSID, PASSWORD);
   Serial.println("");
 
   // Wait for connection
